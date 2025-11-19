@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intrinsic Alpha DCF</title>
+    
+    <!-- 1. Load Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. Load React and ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- 3. Load Recharts (Chart library) -->
+    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    
+    <!-- 4. Load Babel to translate JSX in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Custom scrollbar for a cleaner look */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100">
+    <div id="root"></div>
+
+    <!-- The Application Logic -->
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        
+        // Destructure Recharts from the global window object
+        const { 
+            LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
+            ResponsiveContainer, BarChart, Bar, ReferenceLine 
+        } = Recharts;
+
+        // --- Icons (Inlined as Components to avoid dependency issues) ---
+        const IconWrapper = ({ children }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 md:h-6 md:w-6">
+                {children}
+            </svg>
+        );
+        
+        const Activity = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>;
+        const TrendingUp = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
+        const DollarSign = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>;
+        const Settings = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>;
+        const Calculator = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="16" y1="14" x2="16" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="18"/><line x1="12" y1="18" x2="12" y2="18"/><line x1="8" y1="18" x2="8" y2="18"/></svg>;
+        const RefreshCw = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>;
+        const BarChart3 = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>;
+
+        // --- Utility Functions ---
+        const formatCurrency = (value) => 
+            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
+
+        const formatNumber = (value) => 
+            new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
+
+        const randomNormal = (mean, stdDev) => {
+            let u = 0, v = 0;
+            while(u === 0) u = Math.random();
+            while(v === 0) v = Math.random();
+            const z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+            return mean + z * stdDev;
+        };
+
+        // --- Main App Component ---
+        function DCFApp() {
+            const [inputs, setInputs] = useState({
+                currentRevenue: 1000,
+                revenueGrowth: 5.0,
+                ebitMargin: 20.0,
+                taxRate: 21.0,
+                reinvestmentRate: 5.0,
+                wacc: 9.0,
+                terminalGrowth: 2.5,
+                sharesOutstanding: 50,
+                netDebt: 200,
+            });
+
+            const [mcSettings, setMcSettings] = useState({
+                iterations: 2000,
+                volatility: 15,
+            });
+
+            const [mcResults, setMcResults] = useState(null);
+            const [isSimulating, setIsSimulating] = useState(false);
+            const [activeTab, setActiveTab] = useState('dcf');
+
+            const calculateValuation = (params) => {
+                const {
+                currentRevenue, revenueGrowth, ebitMargin, taxRate, 
+                reinvestmentRate, wacc, terminalGrowth, sharesOutstanding, netDebt
+                } = params;
+
+                const projectionYears = 5;
+                let projectedCashFlows = [];
+                let cumulativePV = 0;
+                let lastRevenue = currentRevenue;
+
+                for (let i = 1; i <= projectionYears; i++) {
+                const revenue = lastRevenue * (1 + revenueGrowth / 100);
+                const ebit = revenue * (ebitMargin / 100);
+                const nopat = ebit * (1 - taxRate / 100);
+                const reinvestment = revenue * (reinvestmentRate / 100);
+                const fcf = nopat - reinvestment;
+                
+                const discountFactor = 1 / Math.pow(1 + wacc / 100, i);
+                const pv = fcf * discountFactor;
+
+                cumulativePV += pv;
+                lastRevenue = revenue;
+
+                projectedCashFlows.push({
+                    year: i,
+                    revenue,
+                    ebit,
+                    nopat,
+                    fcf,
+                    pv
+                });
+                }
+
+                const finalYearFCF = projectedCashFlows[projectionYears - 1].fcf;
+                const terminalFCF = finalYearFCF * (1 + terminalGrowth / 100);
+                
+                const safeWacc = Math.max(wacc, terminalGrowth + 0.1); 
+                const terminalValue = terminalFCF / ((safeWacc - terminalGrowth) / 100);
+                const discountFactorTV = 1 / Math.pow(1 + safeWacc / 100, projectionYears);
+                const pvTerminalValue = terminalValue * discountFactorTV;
+
+                const enterpriseValue = cumulativePV + pvTerminalValue;
+                const equityValue = enterpriseValue - netDebt;
+                const sharePrice = equityValue / sharesOutstanding;
+
+                return {
+                projectedCashFlows,
+                enterpriseValue,
+                equityValue,
+                sharePrice,
+                pvTerminalValue,
+                cumulativePV,
+                terminalValue
+                };
+            };
+
+            const results = useMemo(() => calculateValuation(inputs), [inputs]);
+
+            const runMonteCarlo = async () => {
+                setIsSimulating(true);
+                await new Promise(r => setTimeout(r, 100));
+
+                const simulations = [];
+                const vol = mcSettings.volatility / 100; 
+
+                for (let i = 0; i < mcSettings.iterations; i++) {
+                const simInputs = {
+                    ...inputs,
+                    revenueGrowth: randomNormal(inputs.revenueGrowth, inputs.revenueGrowth * vol),
+                    ebitMargin: randomNormal(inputs.ebitMargin, inputs.ebitMargin * (vol * 0.5)), 
+                    wacc: Math.max(2, randomNormal(inputs.wacc, inputs.wacc * (vol * 0.2))),
+                    terminalGrowth: randomNormal(inputs.terminalGrowth, inputs.terminalGrowth * (vol * 0.5))
+                };
+
+                const res = calculateValuation(simInputs);
+                if (res.sharePrice > -500 && res.sharePrice < 50000) {
+                    simulations.push(res.sharePrice);
+                }
+                }
+
+                simulations.sort((a, b) => a - b);
+                const min = simulations[0];
+                const max = simulations[simulations.length - 1];
+                const binCount = 30;
+                const binSize = (max - min) / binCount;
+                
+                const histogramData = Array(binCount).fill(0).map((_, i) => {
+                const binStart = min + i * binSize;
+                return {
+                    range: `${binStart.toFixed(0)}-${(binStart + binSize).toFixed(0)}`,
+                    binStart: binStart,
+                    count: 0
+                };
+                });
+
+                simulations.forEach(val => {
+                const binIndex = Math.min(
+                    Math.floor((val - min) / binSize), 
+                    binCount - 1
+                );
+                histogramData[binIndex].count++;
+                });
+
+                const meanPrice = simulations.reduce((a, b) => a + b, 0) / simulations.length;
+
+                setMcResults({
+                simulations,
+                histogramData,
+                meanPrice,
+                min,
+                max
+                });
+                setIsSimulating(false);
+            };
+
+            const handleInputChange = (key, value) => {
+                setInputs(prev => ({
+                ...prev,
+                [key]: parseFloat(value) || 0
+                }));
+            };
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 font-sans selection:bg-emerald-500 selection:text-white">
+                
+                {/* Header */}
+                <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between border-b border-slate-700 pb-6">
+                    <div>
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-emerald-500 rounded-lg">
+                        <Activity className="h-6 w-6 text-white" />
+                        </div>
+                        <h1 className="text-2xl font-bold text-white">Intrinsic Alpha <span className="text-emerald-400">DCF</span></h1>
+                    </div>
+                    <p className="text-slate-400 mt-2 text-sm">Discounted Cash Flow & Monte Carlo Simulator</p>
+                    </div>
+                    <div className="mt-4 md:mt-0 flex items-center gap-4">
+                    <div className="text-right hidden md:block">
+                        <p className="text-xs text-slate-500 font-mono">TERMINAL WACC</p>
+                        <p className="text-xl font-bold text-emerald-400">{inputs.wacc}%</p>
+                    </div>
+                    </div>
+                </header>
+
+                <main className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    
+                    {/* Left Column: Inputs */}
+                    <div className="lg:col-span-3 space-y-6">
+                    <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg">
+                        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <Settings className="h-4 w-4 text-emerald-400" /> 
+                        Model Assumptions
+                        </h2>
+                        
+                        <div className="space-y-4">
+                        <InputGroup 
+                            label="Current Revenue ($M)" 
+                            value={inputs.currentRevenue} 
+                            onChange={(v) => handleInputChange('currentRevenue', v)} 
+                        />
+                        <InputGroup 
+                            label="Rev Growth Rate (%)" 
+                            value={inputs.revenueGrowth} 
+                            step={0.1}
+                            onChange={(v) => handleInputChange('revenueGrowth', v)} 
+                        />
+                        <InputGroup 
+                            label="EBIT Margin (%)" 
+                            value={inputs.ebitMargin} 
+                            step={0.5}
+                            onChange={(v) => handleInputChange('ebitMargin', v)} 
+                        />
+                        <InputGroup 
+                            label="Tax Rate (%)" 
+                            value={inputs.taxRate} 
+                            onChange={(v) => handleInputChange('taxRate', v)} 
+                        />
+                        <InputGroup 
+                            label="Reinvest. Rate (%)" 
+                            subLabel="(% of Rev)"
+                            value={inputs.reinvestmentRate} 
+                            onChange={(v) => handleInputChange('reinvestmentRate', v)} 
+                        />
+                        <div className="h-px bg-slate-700 my-4"></div>
+                        <InputGroup 
+                            label="WACC (%)" 
+                            value={inputs.wacc} 
+                            step={0.1}
+                            onChange={(v) => handleInputChange('wacc', v)} 
+                        />
+                        <InputGroup 
+                            label="Terminal Growth (%)" 
+                            value={inputs.terminalGrowth} 
+                            step={0.1}
+                            onChange={(v) => handleInputChange('terminalGrowth', v)} 
+                        />
+                        <div className="h-px bg-slate-700 my-4"></div>
+                        <InputGroup 
+                            label="Net Debt ($M)" 
+                            value={inputs.netDebt} 
+                            onChange={(v) => handleInputChange('netDebt', v)} 
+                        />
+                        <InputGroup 
+                            label="Shares Outstanding (M)" 
+                            value={inputs.sharesOutstanding} 
+                            onChange={(v) => handleInputChange('sharesOutstanding', v)} 
+                        />
+                        </div>
+                    </div>
+                    </div>
+
+                    {/* Right Column: Analysis */}
+                    <div className="lg:col-span-9 space-y-6">
+                    
+                    {/* Top KPI Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <ResultCard 
+                        title="Enterprise Value" 
+                        value={formatCurrency(results.enterpriseValue)} 
+                        sub={`TV: ${formatCurrency(results.pvTerminalValue)}`}
+                        icon={TrendingUp}
+                        />
+                        <ResultCard 
+                        title="Equity Value" 
+                        value={formatCurrency(results.equityValue)} 
+                        sub={`Debt: ${formatCurrency(inputs.netDebt)}`}
+                        icon={DollarSign}
+                        />
+                        <div className="bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-xl p-5 shadow-lg border border-emerald-500 text-white flex flex-col justify-between">
+                        <div className="flex justify-between items-start">
+                            <div>
+                            <p className="text-emerald-100 text-sm font-medium mb-1">Target Share Price</p>
+                            <h3 className="text-4xl font-bold tracking-tight">{formatCurrency(results.sharePrice)}</h3>
+                            </div>
+                            <div className="bg-white/20 p-2 rounded-lg">
+                            <Calculator className="h-6 w-6 text-white" />
+                            </div>
+                        </div>
+                        <p className="text-xs text-emerald-100/80 mt-2">Based on {inputs.sharesOutstanding}M shares</p>
+                        </div>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex border-b border-slate-700 space-x-6">
+                        <button 
+                        onClick={() => setActiveTab('dcf')}
+                        className={`pb-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'dcf' ? 'border-emerald-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                        >
+                        DCF Projection
+                        </button>
+                        <button 
+                        onClick={() => setActiveTab('montecarlo')}
+                        className={`pb-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'montecarlo' ? 'border-emerald-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                        >
+                        Monte Carlo Simulation
+                        </button>
+                    </div>
+
+                    {/* Tab Content: DCF */}
+                    {activeTab === 'dcf' && (
+                        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                        <div className="p-5 border-b border-slate-700 flex justify-between items-center">
+                            <h3 className="font-semibold text-white">Cash Flow Forecast (5Y)</h3>
+                            <span className="text-xs text-slate-400 bg-slate-900 px-2 py-1 rounded">USD Millions</span>
+                        </div>
+                        
+                        {/* Chart */}
+                        <div className="h-64 w-full p-4">
+                            <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={results.projectedCashFlows}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                <XAxis dataKey="year" stroke="#94a3b8" tickFormatter={(val) => `Y${val}`} />
+                                <YAxis stroke="#94a3b8" />
+                                <Tooltip 
+                                contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9' }}
+                                itemStyle={{ color: '#34d399' }}
+                                formatter={(val) => formatNumber(val)}
+                                />
+                                <Line type="monotone" dataKey="fcf" name="Free Cash Flow" stroke="#34d399" strokeWidth={3} dot={{ r: 4, fill: '#34d399' }} />
+                                <Line type="monotone" dataKey="ebit" name="EBIT" stroke="#64748b" strokeWidth={2} strokeDasharray="5 5" />
+                            </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+
+                        {/* Table */}
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left text-slate-300">
+                            <thead className="bg-slate-900/50 text-xs uppercase text-slate-400">
+                                <tr>
+                                <th className="px-6 py-3">Metric</th>
+                                {results.projectedCashFlows.map(y => <th key={y.year} className="px-6 py-3 text-right">Year {y.year}</th>)}
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700/50">
+                                <tr>
+                                <td className="px-6 py-3 font-medium text-white">Revenue</td>
+                                {results.projectedCashFlows.map(y => <td key={y.year} className="px-6 py-3 text-right">{formatNumber(y.revenue)}</td>)}
+                                </tr>
+                                <tr>
+                                <td className="px-6 py-3">EBIT</td>
+                                {results.projectedCashFlows.map(y => <td key={y.year} className="px-6 py-3 text-right">{formatNumber(y.ebit)}</td>)}
+                                </tr>
+                                <tr>
+                                <td className="px-6 py-3 text-slate-400">(-) Tax</td>
+                                {results.projectedCashFlows.map(y => <td key={y.year} className="px-6 py-3 text-right text-slate-400">({formatNumber(y.ebit - y.nopat)})</td>)}
+                                </tr>
+                                <tr>
+                                <td className="px-6 py-3 font-medium text-white">NOPAT</td>
+                                {results.projectedCashFlows.map(y => <td key={y.year} className="px-6 py-3 text-right">{formatNumber(y.nopat)}</td>)}
+                                </tr>
+                                <tr>
+                                <td className="px-6 py-3 text-slate-400">(-) Reinvestment</td>
+                                {results.projectedCashFlows.map(y => <td key={y.year} className="px-6 py-3 text-right text-slate-400">({formatNumber(y.nopat - y.fcf)})</td>)}
+                                </tr>
+                                <tr className="bg-emerald-900/10">
+                                <td className="px-6 py-3 font-bold text-emerald-400">Unlevered FCF</td>
+                                {results.projectedCashFlows.map(y => <td key={y.year} className="px-6 py-3 text-right font-bold text-emerald-400">{formatNumber(y.fcf)}</td>)}
+                                </tr>
+                            </tbody>
+                            </table>
+                        </div>
+                        </div>
+                    )}
+
+                    {/* Tab Content: Monte Carlo */}
+                    {activeTab === 'montecarlo' && (
+                        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
+                        <div className="flex flex-col md:flex-row justify-between md:items-center mb-6 gap-4">
+                            <div>
+                            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                                <BarChart3 className="h-5 w-5 text-emerald-400"/>
+                                Monte Carlo Simulation
+                            </h3>
+                            <p className="text-slate-400 text-sm mt-1">
+                                Simulate {mcSettings.iterations} scenarios with randomized Growth, Margin, and WACC.
+                            </p>
+                            </div>
+                            <div className="flex items-center gap-4 bg-slate-900 p-2 rounded-lg border border-slate-700">
+                                <div className="flex flex-col px-2">
+                                    <span className="text-xs text-slate-500">Volatility</span>
+                                    <input 
+                                        type="number" 
+                                        className="bg-transparent text-white w-12 border-none focus:ring-0 p-0 text-sm font-bold"
+                                        value={mcSettings.volatility}
+                                        onChange={(e) => setMcSettings({...mcSettings, volatility: parseFloat(e.target.value)})}
+                                    />
+                                </div>
+                                <button 
+                                onClick={runMonteCarlo}
+                                disabled={isSimulating}
+                                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-md font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                {isSimulating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
+                                Run Sim
+                                </button>
+                            </div>
+                        </div>
+
+                        {!mcResults ? (
+                            <div className="h-64 flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-700 rounded-lg">
+                            <Activity className="h-12 w-12 mb-3 opacity-20" />
+                            <p>Ready to simulate. Adjust inputs and click Run.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-6 animate-in fade-in duration-500">
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="bg-slate-900/50 p-3 rounded border border-slate-700 text-center">
+                                    <div className="text-xs text-slate-500 uppercase tracking-wider">Mean Price</div>
+                                    <div className="text-xl font-bold text-emerald-400">{formatCurrency(mcResults.meanPrice)}</div>
+                                </div>
+                                <div className="bg-slate-900/50 p-3 rounded border border-slate-700 text-center">
+                                    <div className="text-xs text-slate-500 uppercase tracking-wider">Min Price</div>
+                                    <div className="text-xl font-bold text-red-400">{formatCurrency(mcResults.min)}</div>
+                                </div>
+                                <div className="bg-slate-900/50 p-3 rounded border border-slate-700 text-center">
+                                    <div className="text-xs text-slate-500 uppercase tracking-wider">Max Price</div>
+                                    <div className="text-xl font-bold text-blue-400">{formatCurrency(mcResults.max)}</div>
+                                </div>
+                            </div>
+
+                            <div className="h-72 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={mcResults.histogramData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                    <XAxis 
+                                        dataKey="range" 
+                                        stroke="#94a3b8" 
+                                        tick={{fontSize: 10}} 
+                                        interval={2} 
+                                    />
+                                    <YAxis stroke="#94a3b8" hide />
+                                    <Tooltip 
+                                    contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9' }}
+                                    cursor={{fill: '#334155', opacity: 0.4}}
+                                    />
+                                    <ReferenceLine x={results.sharePrice} stroke="red" label="Current" />
+                                    <Bar dataKey="count" fill="#34d399" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                                </ResponsiveContainer>
+                                <p className="text-center text-xs text-slate-500 mt-2">Distribution of Intrinsic Value Outcomes</p>
+                            </div>
+                            </div>
+                        )}
+                        </div>
+                    )}
+                    </div>
+                </main>
+                </div>
+            );
+        }
+
+        function InputGroup({ label, value, onChange, step = 1, subLabel }) {
+            return (
+                <div className="flex flex-col">
+                <label className="text-xs text-slate-400 font-medium mb-1.5 flex justify-between">
+                    <span>{label}</span>
+                    {subLabel && <span className="text-slate-600 italic">{subLabel}</span>}
+                </label>
+                <input
+                    type="number"
+                    step={step}
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all"
+                />
+                </div>
+            );
+        }
+
+        function ResultCard({ title, value, sub, icon: Icon }) {
+            return (
+                <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 shadow-lg">
+                <div className="flex justify-between items-start mb-2">
+                    <span className="text-slate-400 text-sm font-medium">{title}</span>
+                    {Icon && <Icon className="h-4 w-4 text-slate-500" />}
+                </div>
+                <div className="text-2xl font-bold text-white mb-1">{value}</div>
+                <div className="text-xs text-slate-500">{sub}</div>
+                </div>
+            );
+        }
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<DCFApp />);
+    </script>
+</body>
+</html>
