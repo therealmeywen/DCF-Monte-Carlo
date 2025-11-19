@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mason's DCF & Monte Carlo</title>
+
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Helvetica', 'Arial', 'sans-serif'],
+                    },
+                    colors: {
+                        garnet: {
+                            DEFAULT: '#722F37',
+                            light: '#8B3A44',
+                            dark: '#59242b',
+                            50: '#fdf2f3',
+                            100: '#fbe6e8',
+                            200: '#f8d0d4',
+                        },
+                        parchment: {
+                            DEFAULT: '#F5F1E6', // Card bg
+                            dark: '#EBE7DE',    // App bg
+                            light: '#FDFBF7',   // Lighter
+                            text: '#2D2424',    // Main text
+                            muted: '#5D4E4E',   // Muted text
+                            border: '#D6D2C4',  // Borders
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- React and ReactDOM (Using specific versions for stability) -->
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+
+    <!-- Recharts Dependencies -->
+    <!-- Sometimes UMD builds need prop-types -->
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <!-- Recharts (Pinned version to ensure compatibility) -->
+    <script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.js"></script>
+
+    <!-- Babel to translate JSX in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body {
+            background-color: #EBE7DE;
+        }
+
+        /* parchment-dark */
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+        // access Recharts from the global window object
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } = window.Recharts;
+
+        // --- Icons (SVG replacements for Lucide to keep it simple) ---
+        const Icons = {
+            Calculator: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2" /><line x1="8" x2="16" y1="6" y2="6" /><line x1="16" x2="16" y1="14" y2="18" /><path d="M16 10h.01" /><path d="M12 10h.01" /><path d="M8 10h.01" /><path d="M12 14h.01" /><path d="M8 14h.01" /><path d="M12 18h.01" /><path d="M8 18h.01" /></svg>,
+            TrendingUp: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></svg>,
+            Settings: () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>,
+            RefreshCw: () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg>,
+            Info: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>,
+            DollarSign: () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="2" y2="22" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+        };
+
+        // --- Components ---
+
+        const FinancialInput = ({ label, value, onChange, min, max, step, unit = '', tooltip }) => {
+            const handleSliderChange = (e) => onChange(parseFloat(e.target.value));
+            const handleInputChange = (e) => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val)) onChange(val);
+            };
+
+            return (
+                <div className="mb-6">
+                    <div className="flex justify-between items-center mb-2">
+                        <label className="text-sm font-medium text-parchment-text flex items-center gap-2">
+                            {label}
+                            {tooltip && (
+                                <div className="group relative flex justify-center">
+                                    <div className="text-parchment-muted cursor-help"><Icons.Info /></div>
+                                    <span className="absolute bottom-full mb-2 hidden group-hover:block w-48 p-2 bg-parchment-text text-parchment-light text-xs rounded shadow-lg z-10">
+                                        {tooltip}
+                                    </span>
+                                </div>
+                            )}
+                        </label>
+                        <div className="relative">
+                            <input
+                                type="number"
+                                value={value}
+                                onChange={handleInputChange}
+                                className="w-24 text-right p-1 border border-parchment-border rounded text-sm focus:ring-2 focus:ring-garnet outline-none bg-parchment-dark text-parchment-text"
+                            />
+                            <span className="absolute left-2 top-1 text-parchment-muted text-xs pointer-events-none">{unit}</span>
+                        </div>
+                    </div>
+                    <input
+                        type="range"
+                        min={min}
+                        max={max}
+                        step={step}
+                        value={value}
+                        onChange={handleSliderChange}
+                        className="w-full h-2 bg-parchment-border rounded-lg appearance-none cursor-pointer accent-garnet"
+                    />
+                </div>
+            );
+        };
+
+        const RangeSlider = ({ label, min, max, step, value, onChange }) => {
+            const [isDragging, setIsDragging] = React.useState(null);
+            const sliderRef = React.useRef(null);
+
+            const handleMouseDown = (index) => (e) => {
+                e.preventDefault();
+                setIsDragging(index);
+            };
+
+            const handleMouseMove = (e) => {
+                if (isDragging === null || !sliderRef.current) return;
+                const rect = sliderRef.current.getBoundingClientRect();
+                const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                const rawValue = min + percent * (max - min);
+                const steppedValue = Math.round(rawValue / step) * step;
+
+                const newValue = [...value];
+                if (isDragging === 0) {
+                    newValue[0] = Math.min(steppedValue, value[1] - step);
+                } else {
+                    newValue[1] = Math.max(steppedValue, value[0] + step);
+                }
+                onChange(newValue);
+            };
+
+            const handleMouseUp = () => setIsDragging(null);
+
+            React.useEffect(() => {
+                if (isDragging !== null) {
+                    document.addEventListener('mousemove', handleMouseMove);
+                    document.addEventListener('mouseup', handleMouseUp);
+                    return () => {
+                        document.removeEventListener('mousemove', handleMouseMove);
+                        document.removeEventListener('mouseup', handleMouseUp);
+                    };
+                }
+            }, [isDragging, value]);
+
+            const getPosition = (val) => ((val - min) / (max - min)) * 100;
+
+            return (
+                <div className="mb-6">
+                    <div className="flex justify-between items-center mb-2">
+                        <label className="text-sm font-medium text-parchment-text">{label}</label>
+                        <div className="text-sm text-parchment-muted">
+                            {value[0].toFixed(1)}x - {value[1].toFixed(1)}x
+                        </div>
+                    </div>
+                    <div ref={sliderRef} className="relative h-3 bg-parchment-border rounded-lg cursor-pointer">
+                        <div
+                            className="absolute h-full bg-garnet rounded-lg"
+                            style={{
+                                left: `${getPosition(value[0])}%`,
+                                right: `${100 - getPosition(value[1])}%`
+                            }}
+                        />
+                        {[0, 1].map((index) => (
+                            <div
+                                key={index}
+                                className="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-parchment rounded-full border-2 border-garnet cursor-grab active:cursor-grabbing shadow-md"
+                                style={{ left: `${getPosition(value[index])}%`, marginLeft: '-10px' }}
+                                onMouseDown={handleMouseDown(index)}
+                            />
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const SimpleInput = ({ label, value, onChange, unit = '', tooltip, className = "mb-4" }) => {
+            return (
+                <div className={`${className} flex flex-col h-full`}>
+                    <div className="flex-1 flex items-end mb-2">
+                        <label className="text-sm font-medium text-parchment-text flex items-center gap-2">
+                            {label}
+                            {tooltip && (
+                                <div className="group relative flex justify-center">
+                                    <div className="text-parchment-muted cursor-help"><Icons.Info /></div>
+                                    <span className="absolute bottom-full mb-2 hidden group-hover:block w-48 p-2 bg-parchment-text text-parchment-light text-xs rounded shadow-lg z-10">
+                                        {tooltip}
+                                    </span>
+                                </div>
+                            )}
+                        </label>
+                    </div>
+                    <div className="relative">
+                        <input
+                            type="number"
+                            value={value}
+                            onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+                            className="w-full text-right p-2 border border-parchment-border rounded text-sm focus:ring-2 focus:ring-garnet outline-none bg-parchment-dark text-parchment-text"
+                        />
+                        <span className="absolute left-2 top-2 text-parchment-muted text-xs pointer-events-none">{unit}</span>
+                    </div>
+                </div>
+            );
+        };
+
+        const Card = ({ children, className = "" }) => (
+            <div className={`bg-parchment p-6 rounded-xl shadow-sm border border-parchment-border ${className}`}>
+                {children}
+            </div>
+        );
+
+        const StatBox = ({ label, value, subtext, highlight = false }) => (
+            <div className={`p-4 rounded-lg border bg-parchment border-parchment-border`}>
+                <div className="text-xs text-parchment-muted uppercase font-semibold tracking-wider">{label}</div>
+                <div className={`text-2xl font-bold my-1 ${highlight ? 'text-garnet' : 'text-parchment-text'}`}>{value}</div>
+                {subtext && <div className="text-xs text-parchment-muted">{subtext}</div>}
+            </div>
+        );
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('dcf');
+
+            // --- State: DCF Inputs ---
+            const [revenue, setRevenue] = useState(1000);
+            // Growth rates for Year 1, 2, 3
+            const [growthRates, setGrowthRates] = useState([10, 8, 6]);
+            const [fcfMargin, setFcfMargin] = useState(15);
+            const [wacc, setWacc] = useState(9);
+            const [terminalGrowth, setTerminalGrowth] = useState(2.5);
+            const [shares, setShares] = useState(100);
+            const [cash, setCash] = useState(0);
+            const [debt, setDebt] = useState(0);
+
+            // --- State: Multiples Valuation ---
+            const [multiplesRange, setMultiplesRange] = useState([8, 12]);
+
+            // --- State: Monte Carlo Inputs ---
+            const [iterations, setIterations] = useState(10000);
+            const [growthVolatility, setGrowthVolatility] = useState(5);
+            const [marginVolatility, setMarginVolatility] = useState(2);
+
+            // --- State: Ticker Search ---
+            const [ticker, setTicker] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+
+            const fetchFinancials = async () => {
+                if (!ticker) return;
+                setIsLoading(true);
+                try {
+                    const response = await fetch(`/api/financials?symbol=${ticker}`);
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.error || data.details || 'Failed to fetch data');
+                    }
+
+                    setRevenue(data.revenue);
+                    setShares(data.shares);
+                    setCash(data.cash);
+                    setDebt(data.debt);
+                } catch (error) {
+                    alert(`Error: ${error.message}`);
+                    console.error(error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            // --- Calculations ---
+            const runDCF = (r, gRates, m, w, tg, s, c, d) => {
+                let totalPV = 0;
+                let currentRevenue = r;
+                const annualFlows = [];
+                const years = 3; // Fixed 3-year projection
+
+                for (let i = 1; i <= years; i++) {
+                    const g = gRates[i - 1];
+                    currentRevenue = currentRevenue * (1 + g / 100);
+                    const fcf = currentRevenue * (m / 100);
+                    const discountFactor = 1 / Math.pow(1 + w / 100, i);
+                    const pv = fcf * discountFactor;
+                    totalPV += pv;
+                    annualFlows.push({
+                        year: i,
+                        revenue: currentRevenue,
+                        growth: g,
+                        fcf: fcf,
+                        discountFactor: discountFactor,
+                        pv: pv
+                    });
+                }
+
+                const safeWacc = Math.max(w, tg + 0.5);
+                // Terminal value based on Year 3 FCF
+                const finalFCF = currentRevenue * (m / 100);
+                const terminalValue = (finalFCF * (1 + tg / 100)) / ((safeWacc - tg) / 100);
+                const terminalPV = terminalValue / Math.pow(1 + w / 100, years);
+
+                const enterpriseValue = totalPV + terminalPV;
+                const equityValue = enterpriseValue + c - d;
+                const sharePrice = equityValue / s;
+
+                return { sharePrice, equityValue, enterpriseValue, terminalPV, totalPV, annualFlows };
+            };
+
+            const baseCase = useMemo(() => {
+                return runDCF(revenue, growthRates, fcfMargin, wacc, terminalGrowth, shares, cash, debt);
+            }, [revenue, growthRates, fcfMargin, wacc, terminalGrowth, shares, cash, debt]);
+
+            const [simulationResults, setSimulationResults] = useState(null);
+
+            const runSimulation = () => {
+                const results = [];
+                const getNormalRandom = (mean, stdDev) => {
+                    let u = 0, v = 0;
+                    while (u === 0) u = Math.random();
+                    while (v === 0) v = Math.random();
+                    const z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+                    return mean + z * stdDev;
+                };
+
+                for (let i = 0; i < iterations; i++) {
+                    // Apply volatility to each year's growth rate independently
+                    const simGrowthRates = growthRates.map(g => getNormalRandom(g, growthVolatility));
+                    const simMargin = getNormalRandom(fcfMargin, marginVolatility);
+
+                    const res = runDCF(revenue, simGrowthRates, simMargin, wacc, terminalGrowth, shares, cash, debt);
+                    if (res.sharePrice > 0 && res.sharePrice < 10000) {
+                        results.push(res.sharePrice);
+                    }
+                }
+
+                if (results.length === 0) return;
+
+                const min = Math.min(...results);
+                const max = Math.max(...results);
+                const bucketCount = 20;
+                const range = max - min;
+                const step = range / bucketCount;
+
+                const histogram = Array.from({ length: bucketCount }, (_, i) => {
+                    const lower = min + (i * step);
+                    const upper = lower + step;
+                    return {
+                        range: `$${lower.toFixed(0)} - $${upper.toFixed(0)}`,
+                        priceStart: lower,
+                        count: results.filter(r => r >= lower && r < upper).length
+                    };
+                });
+
+                const avg = results.reduce((a, b) => a + b, 0) / results.length;
+                const sorted = [...results].sort((a, b) => a - b);
+                const median = sorted[Math.floor(sorted.length / 2)];
+
+                // Calculate standard deviation
+                const variance = results.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / results.length;
+                const stdDev = Math.sqrt(variance);
+
+                setSimulationResults({ histogram, avg, median, stdDev, count: results.length });
+            };
+
+            const updateGrowthRate = (index, value) => {
+                const newRates = [...growthRates];
+                newRates[index] = value;
+                setGrowthRates(newRates);
+            };
+
+            return (
+                <div className="min-h-screen bg-parchment-dark font-sans text-parchment-text p-4 md:p-8">
+                    <div className="max-w-6xl mx-auto">
+                        <header className="mb-8 flex items-center justify-between">
+                            <div>
+                                <h1 className="text-3xl font-bold text-garnet flex items-center gap-2">
+                                    <div className="text-garnet"><Icons.Calculator /></div>
+                                    Intrinsic Value Calculator
+                                </h1>
+                                <p className="text-parchment-muted mt-2">
+                                    Mason's DCF & Monte Carlo Tool.
+                                </p>
+                            </div>
+
+                            {/* Middle Section: Ticker Search */}
+                            <div className="flex items-center gap-2">
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="Ticker"
+                                        className="w-32 p-2 border border-parchment-border rounded text-sm focus:ring-2 focus:ring-garnet outline-none bg-parchment-dark text-parchment-text uppercase font-semibold placeholder-parchment-muted"
+                                        value={ticker}
+                                        onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                                        onKeyDown={(e) => e.key === 'Enter' && fetchFinancials()}
+                                    />
+                                </div>
+                                <button
+                                    onClick={fetchFinancials}
+                                    disabled={isLoading}
+                                    className={`bg-garnet hover:bg-garnet-dark text-white font-bold py-2 px-4 rounded text-sm transition-colors shadow-sm ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                >
+                                    {isLoading ? '...' : 'Go'}
+                                </button>
+                            </div>
+
+                            <img src="logo.png" alt="Logo" className="h-16" />
+                        </header>
+
+                        <div className="flex gap-2 mb-6 border-b border-parchment-border">
+                            <button onClick={() => setActiveTab('dcf')} className={`px-4 py-2 font-medium text-sm transition-colors rounded-t-lg ${activeTab === 'dcf' ? 'bg-parchment text-garnet border-t border-l border-r border-parchment-border' : 'text-parchment-muted hover:text-parchment-text'}`}>DCF Analysis</button>
+                            <button onClick={() => setActiveTab('multiples')} className={`px-4 py-2 font-medium text-sm transition-colors rounded-t-lg ${activeTab === 'multiples' ? 'bg-parchment text-garnet border-t border-l border-r border-parchment-border' : 'text-parchment-muted hover:text-parchment-text'}`}>Multiples Valuation</button>
+                            <button onClick={() => setActiveTab('montecarlo')} className={`px-4 py-2 font-medium text-sm transition-colors rounded-t-lg ${activeTab === 'montecarlo' ? 'bg-parchment text-garnet border-t border-l border-r border-parchment-border' : 'text-parchment-muted hover:text-parchment-text'}`}>Monte Carlo Simulation</button>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            <div className="lg:col-span-4 space-y-4">
+                                {activeTab !== 'montecarlo' && (
+                                    <Card>
+                                        <div className="flex items-center gap-2 mb-3 text-parchment-text font-semibold border-b border-parchment-border pb-2">
+                                            <Icons.DollarSign />
+                                            <span>Core Assumptions</span>
+                                        </div>
+
+                                        {/* Row 1: Current Revenue & Shares & Terminal Growth */}
+                                        <div className="grid grid-cols-3 gap-4 mb-6">
+                                            <SimpleInput label="Current Rev." unit="$M" value={revenue} onChange={setRevenue} tooltip="TTM Revenue" />
+                                            <SimpleInput label="Shares Out." unit="M" value={shares} onChange={setShares} />
+                                            <SimpleInput label="Term. Growth" unit="%" value={terminalGrowth} onChange={setTerminalGrowth} tooltip="Perpetual growth" />
+                                        </div>
+
+                                        {/* Row 2: Revenue Growth Inputs */}
+                                        <div>
+                                            <label className="text-sm font-medium text-parchment-text block mb-2">Revenue Growth (Next 3 Years)</label>
+                                            <div className="grid grid-cols-3 gap-4">
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        value={growthRates[0]}
+                                                        onChange={(e) => updateGrowthRate(0, parseFloat(e.target.value) || 0)}
+                                                        className="w-full text-right p-2 border border-parchment-border rounded text-sm focus:ring-2 focus:ring-garnet outline-none bg-parchment-dark text-parchment-text"
+                                                    />
+                                                    <span className="absolute left-2 top-2 text-parchment-muted text-xs pointer-events-none">Y1 %</span>
+                                                </div>
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        value={growthRates[1]}
+                                                        onChange={(e) => updateGrowthRate(1, parseFloat(e.target.value) || 0)}
+                                                        className="w-full text-right p-2 border border-parchment-border rounded text-sm focus:ring-2 focus:ring-garnet outline-none bg-parchment-dark text-parchment-text"
+                                                    />
+                                                    <span className="absolute left-2 top-2 text-parchment-muted text-xs pointer-events-none">Y2 %</span>
+                                                </div>
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        value={growthRates[2]}
+                                                        onChange={(e) => updateGrowthRate(2, parseFloat(e.target.value) || 0)}
+                                                        className="w-full text-right p-2 border border-parchment-border rounded text-sm focus:ring-2 focus:ring-garnet outline-none bg-parchment-dark text-parchment-text"
+                                                    />
+                                                    <span className="absolute left-2 top-2 text-parchment-muted text-xs pointer-events-none">Y3 %</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="border-b border-parchment-border my-6"></div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <SimpleInput label="Cash & ST Inv." unit="$M" value={cash} onChange={setCash} className="mb-0" />
+                                            <SimpleInput label="Long-Term Debt" unit="$M" value={debt} onChange={setDebt} className="mb-0" />
+                                        </div>
+
+                                        <div className="border-b border-parchment-border my-6"></div>
+
+                                        <FinancialInput label="FCF Margin" unit="%" value={fcfMargin} onChange={setFcfMargin} min={-50} max={80} step={0.5} tooltip="FCF as % of Revenue." />
+                                        <FinancialInput label="WACC" unit="%" value={wacc} onChange={setWacc} min={3} max={20} step={0.1} tooltip="Discount Rate." />
+                                    </Card>
+                                )}
+
+                                {activeTab === 'montecarlo' && (
+                                    <Card className="bg-garnet-50 border-garnet-100">
+                                        <div className="flex items-center gap-2 mb-6 text-garnet-dark font-semibold border-b border-garnet-200 pb-2">
+                                            <Icons.TrendingUp />
+                                            <span>Volatility Inputs</span>
+                                        </div>
+                                        <FinancialInput label="Growth Volatility" unit="%" value={growthVolatility} onChange={setGrowthVolatility} min={0} max={20} step={0.5} tooltip="Std Dev of Growth." />
+                                        <FinancialInput label="Margin Volatility" unit="%" value={marginVolatility} onChange={setMarginVolatility} min={0} max={20} step={0.5} tooltip="Std Dev of Margin." />
+                                        <div className="mt-4">
+                                            <button onClick={runSimulation} className="w-full bg-garnet hover:bg-garnet-dark text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all">
+                                                <Icons.RefreshCw /> Run Simulation ({iterations.toLocaleString()})
+                                            </button>
+                                        </div>
+                                    </Card>
+                                )}
+                            </div>
+
+                            <div className="lg:col-span-8">
+                                {activeTab === 'dcf' ? (
+                                    <div className="space-y-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <StatBox label="Intrinsic Value / Share" value={`$${baseCase.sharePrice.toFixed(2)}`} subtext="Based on inputs" highlight={true} />
+                                            <StatBox label="Equity Value" value={`$${(baseCase.equityValue / 1000).toFixed(2)}B`} subtext="Total Market Cap" />
+                                            <StatBox label="Implied Multiple" value={`${(baseCase.enterpriseValue / (revenue * (fcfMargin / 100))).toFixed(1)}x`} subtext="EV/FCF" />
+                                        </div>
+
+                                        <Card>
+                                            <h3 className="text-lg font-semibold text-parchment-text mb-4">Value Composition</h3>
+                                            <div className="flex h-8 rounded-full overflow-hidden bg-parchment-dark mb-2">
+                                                <div className="bg-garnet h-full transition-all duration-500" style={{ width: `${(baseCase.totalPV / baseCase.enterpriseValue) * 100}%` }} />
+                                                <div className="bg-garnet-light h-full transition-all duration-500" style={{ width: `${(baseCase.terminalPV / baseCase.enterpriseValue) * 100}%` }} />
+                                            </div>
+                                            <div className="flex justify-between text-xs text-parchment-muted">
+                                                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-garnet"></div>PV of Cash Flows (3yr): ${(baseCase.totalPV / shares).toFixed(2)}/sh</div>
+                                                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-garnet-light"></div>Terminal Value: ${(baseCase.terminalPV / shares).toFixed(2)}/sh</div>
+                                            </div>
+                                        </Card>
+
+                                        <Card>
+                                            <h3 className="text-lg font-semibold text-parchment-text mb-4">Sensitivity Analysis (WACC vs Growth Shift)</h3>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm text-right">
+                                                    <thead>
+                                                        <tr>
+                                                            <th className="text-left p-2 text-parchment-muted font-normal">WACC \ Growth Shift</th>
+                                                            {[-2, -1, 0, 1, 2].map(shift => (
+                                                                <th key={shift} className="p-2 bg-parchment-dark border border-parchment">{shift > 0 ? '+' : ''}{shift}%</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {[wacc - 1, wacc - 0.5, wacc, wacc + 0.5, wacc + 1].map(w => (
+                                                            <tr key={w}>
+                                                                <td className="p-2 bg-parchment-dark border border-parchment font-medium">{w.toFixed(1)}%</td>
+                                                                {[-2, -1, 0, 1, 2].map(shift => {
+                                                                    // Shift all growth rates by 'shift'
+                                                                    const shiftedRates = growthRates.map(r => r + shift);
+                                                                    const res = runDCF(revenue, shiftedRates, fcfMargin, w, terminalGrowth, shares, cash, debt);
+                                                                    const isBase = w === wacc && shift === 0;
+                                                                    return (
+                                                                        <td key={shift} className={`p-2 border border-parchment-border ${isBase ? 'bg-garnet-100 font-bold text-garnet' : ''}`}>
+                                                                            ${res.sharePrice.toFixed(2)}
+                                                                        </td>
+                                                                    )
+                                                                })}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </Card>
+                                    </div>
+                                ) : activeTab === 'multiples' ? (
+                                    <div className="space-y-6">
+                                        {(() => {
+                                            const year3FCF = baseCase.annualFlows[2].fcf;
+                                            const calcMultiple = (multiple) => {
+                                                const ev = year3FCF * multiple;
+                                                const equity = ev + cash - debt;
+                                                const price = equity / shares;
+                                                return { ev, equity, price };
+                                            };
+                                            const minResult = calcMultiple(multiplesRange[0]);
+                                            const maxResult = calcMultiple(multiplesRange[1]);
+                                            const midMultiple = (multiplesRange[0] + multiplesRange[1]) / 2;
+                                            const midResult = calcMultiple(midMultiple);
+
+                                            return (
+                                                <>
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
+                                                        <StatBox label="Low Valuation" value={`$${minResult.price.toFixed(2)}`} subtext={`${multiplesRange[0].toFixed(1)}x Multiple`} />
+                                                        <StatBox label="Mid Valuation" value={`$${midResult.price.toFixed(2)}`} subtext={`${midMultiple.toFixed(1)}x Multiple`} highlight={true} />
+                                                        <StatBox label="High Valuation" value={`$${maxResult.price.toFixed(2)}`} subtext={`${multiplesRange[1].toFixed(1)}x Multiple`} />
+                                                    </div>
+
+                                                    <Card className="pb-12">
+                                                        <h3 className="text-lg font-semibold text-parchment-text mb-10">FCF Multiple Range</h3>
+                                                        <div className="mb-10 p-8 bg-parchment-dark rounded-lg">
+                                                            <div className="text-sm text-parchment-muted mb-1">Year 3 Free Cash Flow</div>
+                                                            <div className="text-2xl font-bold text-parchment-text">${year3FCF.toFixed(1)}M</div>
+                                                        </div>
+                                                        <div className="mb-10">
+                                                            <RangeSlider
+                                                                label="EV/FCF Multiple Range"
+                                                                min={5}
+                                                                max={30}
+                                                                step={0.5}
+                                                                value={multiplesRange}
+                                                                onChange={setMultiplesRange}
+                                                            />
+                                                        </div>
+                                                        <div className="relative h-24 bg-gradient-to-r from-garnet-dark via-garnet to-garnet-light rounded-lg flex items-center justify-between px-6 text-white font-semibold shadow-lg">
+                                                            <div className="text-base">${minResult.price.toFixed(2)}</div>
+                                                            <div className="text-xl">${midResult.price.toFixed(2)}</div>
+                                                            <div className="text-base">${maxResult.price.toFixed(2)}</div>
+                                                        </div>
+                                                    </Card>
+
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {!simulationResults ? (
+                                            <div className="h-64 flex flex-col items-center justify-center text-parchment-muted border-2 border-dashed border-parchment-border rounded-xl bg-parchment-dark">
+                                                <div className="opacity-20 mb-4"><Icons.TrendingUp /></div>
+                                                <p>Set volatility inputs and run the simulation</p>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    <StatBox label="Average Price" value={`$${simulationResults.avg.toFixed(2)}`} highlight={true} />
+                                                    <StatBox label="Median Price" value={`$${simulationResults.median.toFixed(2)}`} />
+                                                    <StatBox label="Simulations" value={simulationResults.count.toLocaleString()} />
+                                                </div>
+                                                <Card className="h-[28rem]">
+                                                    <h3 className="text-lg font-semibold text-parchment-text mb-4">Price Distribution</h3>
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <BarChart data={simulationResults.histogram}>
+                                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#D6D2C4" />
+                                                            <XAxis
+                                                                dataKey="priceStart"
+                                                                type="number"
+                                                                domain={['dataMin', 'dataMax']}
+                                                                tickFormatter={(val) => `$${val.toFixed(0)}`}
+                                                                height={50}
+                                                                fontSize={12}
+                                                                stroke="#5D4E4E"
+                                                            />
+                                                            <YAxis fontSize={12} stroke="#5D4E4E" />
+                                                            <Tooltip
+                                                                contentStyle={{ backgroundColor: '#F5F1E6', borderColor: '#D6D2C4', color: '#2D2424' }}
+                                                                formatter={(value) => [value, 'Occurrences']}
+                                                                labelFormatter={(label, payload) => payload && payload.length ? payload[0].payload.range : label}
+                                                            />
+                                                            <Bar dataKey="count" fill="#722F37" radius={[4, 4, 0, 0]} />
+                                                            {simulationResults.stdDev && (
+                                                                <>
+                                                                    <ReferenceLine
+                                                                        key="neg-sigma"
+                                                                        x={simulationResults.avg - 2 * simulationResults.stdDev}
+                                                                        stroke="#8B3A44"
+                                                                        strokeWidth={2}
+                                                                        strokeDasharray="5 5"
+                                                                        isFront={true}
+                                                                        label={{ value: '-2σ', position: 'insideTopLeft', fill: '#8B3A44', fontSize: 14, fontWeight: 'bold' }}
+                                                                    />
+                                                                    <ReferenceLine
+                                                                        key="pos-sigma"
+                                                                        x={simulationResults.avg + 2 * simulationResults.stdDev}
+                                                                        stroke="#8B3A44"
+                                                                        strokeWidth={2}
+                                                                        strokeDasharray="5 5"
+                                                                        isFront={true}
+                                                                        label={{ value: '+2σ', position: 'insideTopRight', fill: '#8B3A44', fontSize: 14, fontWeight: 'bold' }}
+                                                                    />
+                                                                </>
+                                                            )}
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                </Card>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
