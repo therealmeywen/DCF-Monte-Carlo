@@ -1,0 +1,7 @@
+{
+  "name": "dcf-app",
+  "version": "1.0.0",
+  "description": "DCF and Monte Carlo Simulation App",
+  "main": "index.html",
+  "dependencies": {}
+}
