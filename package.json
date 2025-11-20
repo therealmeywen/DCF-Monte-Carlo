@@ -1,8 +1,0 @@
-{
-    "name": "dcf-app",
-    "version": "1.0.0",
-    "description": "DCF App",
-    "engines": {
-        "node": "22.x"
-    }
-}
