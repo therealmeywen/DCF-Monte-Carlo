@@ -1,0 +1,9 @@
+{
+    "name": "dcf-app",
+    "version": "1.0.0",
+    "description": "DCF App",
+    "dependencies": {},
+    "engines": {
+        "node": "22.x"
+    }
+}
