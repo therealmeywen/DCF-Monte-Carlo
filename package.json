@@ -1,0 +1,11 @@
+{
+    "name": "dcf-app",
+    "version": "1.0.0",
+    "description": "DCF App",
+    "dependencies": {
+        "yahoo-finance2": "2.8.1"
+    },
+    "engines": {
+        "node": "22.x"
+    }
+}
